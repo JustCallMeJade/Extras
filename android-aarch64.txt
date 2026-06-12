@@ -1,0 +1,14 @@
+binaries]
+ar = '/root/r29/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar'
+c = '/root/r29/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang'
+cpp = ['/root/r29/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '--start-no-unused-arguments', '-static-libstdc++', '--end-no-unused-arguments']
+c_ld = '/root/r29/toolchains/llvm/prebuilt/linux-x86_64/bin/ld.lld'
+cpp_ld = '/root/r29/toolchains/llvm/prebuilt/linux-x86_64/bin/ld.lld'
+strip = '/root/r29/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
+pkg-config = 'pkg-config'
+
+[host_machine]
+system = 'android'
+cpu_family = 'aarch64'
+cpu = 'armv8'
+endian = 'little'
