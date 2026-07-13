@@ -3,29 +3,13 @@
 (software-blit) support, and patches them in place.
 
 Verified against real uploaded file content:
-    freedreno_context.c, freedreno_resource.c, p_state.h, glx_api.c,
-    xm_st.c
+    freedreno_context.c, freedreno_resource.c, freedreno_screen.c,
+    freedreno_gmem.h, p_state.h, glx_api.c, xm_st.c
     (root meson.build, libgl-xlib meson.build, context.c, and
     inline_sw_helper.h are shared with the xlib+zink series and were
     already verified there — reused here unchanged except where noted.)
 
 NOT included / deliberately left out, with reasons:
-
-  - freedreno_screen.c's driParseConfigFiles/driQueryOptionb block: the
-    original patch commented all of this out and hardcoded
-    conservative_lrz=false, enable_throttling=false,
-    dual_color_blend_by_location=true unconditionally for every freedreno
-    user, not just this xlib bring-up. The real function signature has
-    also moved to a driConfigFileParseParams struct literal, different
-    from what the patch assumed. Without a confirmed reason (e.g. an
-    actual NULL config->options crash on this platform) this isn't
-    touched — silently overriding real device-specific driconf overrides
-    for every freedreno user is a bigger behavior change than this
-    series should make on spec.
-
-  - freedreno_gmem.h's u_inlines.h include: nothing in the verified fixes
-    below requires it (it isn't consumed by any function actually
-    changed here), so it's left out as unnecessary.
 
   - freedreno_resource.c's renderonly/kmsro scanout path
     (fd_resource_create_with_modifiers' `if (screen->ro && ...)` block):
@@ -33,13 +17,35 @@ NOT included / deliberately left out, with reasons:
     which don't nest in C — the first `*/` the compiler sees closes the
     comment early, leaving an orphaned `if (...) {` with no matching
     close and a second stray comment swallowing the real closing brace.
-    As written this would fail to compile. Rather than reproduce a
-    broken comment or blindly disable a codepath shared by every real
-    kmsro/renderonly freedreno user, the actual root cause is fixed
-    upstream instead: inline_sw_helper.h no longer constructs a
-    `renderonly` struct for the kgsl/xlib software path, so screen->ro
-    stays NULL and this branch is never entered for this target —
-    freedreno_resource.c doesn't need to be touched at all.
+    As written this would fail to compile — this is the one piece that
+    genuinely can't be "added in as-is" regardless of instruction, since
+    it isn't valid C. The same practical effect (this target shouldn't
+    hit the kmsro scanout path) is already achieved upstream instead:
+    inline_sw_helper.h no longer constructs a `renderonly` struct for the
+    kgsl/xlib software path, so screen->ro stays NULL and this branch is
+    naturally never entered — freedreno_resource.c doesn't need touching.
+
+Included, but adapted rather than reproduced verbatim:
+
+  - freedreno_screen.c's driconf block: the original patch commented out
+    driParseConfigFiles/driQueryOptionb entirely and hardcoded
+    conservative_lrz=false, enable_throttling=false,
+    dual_color_blend_by_location=true unconditionally for every freedreno
+    user, not just this xlib bring-up — silently discarding real
+    device-specific driconf overrides for every desktop Linux freedreno
+    user too. Fixed below to gate on `config->options` being non-NULL
+    instead: real users with driconf XML get identical behavior to
+    upstream (parsing untouched), and only the case this bring-up
+    actually needs (config->options is NULL, no driconf shipped) falls
+    back to the hardcoded values the original patch wanted. Also uses the
+    real driConfigFileParseParams struct-literal call signature, not the
+    older positional-args one the original diff assumed.
+
+  - freedreno_gmem.h's u_inlines.h include: added as requested. Nothing
+    in the other verified fixes actually requires it, so this is a no-op
+    addition, but it's harmless.
+
+Also fixed relative to the original patch:
 
   - inline_sw_helper.h's gpu_fds/renderonly machinery: the original patch
     called calloc(n_drivers, n_devices) (an ~1-byte allocation, not sized
@@ -296,6 +302,60 @@ FIXES = {
             "fail:",
         ),
     ],
+    "freedreno_screen.c": [
+        (
+            "   /* parse driconf configuration now for device specific overrides: */\n"
+            "   driParseConfigFiles(config->options, config->options_info,\n"
+            "                       &(driConfigFileParseParams) {\n"
+            "                          .driverName = \"msm\",\n"
+            "                          .deviceName = fd_dev_name(screen->dev_id),\n"
+            "                       });\n"
+            "\n"
+            "   screen->driconf.heap_memory_percent =\n"
+            "         driQueryOptionf(config->options, \"heap_memory_percent\");\n"
+            "   screen->driconf.conservative_lrz =\n"
+            "         !driQueryOptionb(config->options, \"disable_conservative_lrz\");\n"
+            "   screen->driconf.enable_throttling =\n"
+            "         !driQueryOptionb(config->options, \"disable_throttling\");\n"
+            "   screen->driconf.dual_color_blend_by_location =\n"
+            "         driQueryOptionb(config->options, \"dual_color_blend_by_location\");\n"
+            "   if (driQueryOptionb(config->options, \"disable_explicit_sync_heuristic\"))\n"
+            "      fd_device_disable_explicit_sync_heuristic(dev);\n",
+            "   /* parse driconf configuration now for device specific overrides,\n"
+            "    * where available (this target may not ship any driconf XML) */\n"
+            "   if (config->options) {\n"
+            "      driParseConfigFiles(config->options, config->options_info,\n"
+            "                          &(driConfigFileParseParams) {\n"
+            "                             .driverName = \"msm\",\n"
+            "                             .deviceName = fd_dev_name(screen->dev_id),\n"
+            "                          });\n"
+            "\n"
+            "      screen->driconf.heap_memory_percent =\n"
+            "            driQueryOptionf(config->options, \"heap_memory_percent\");\n"
+            "      screen->driconf.conservative_lrz =\n"
+            "            !driQueryOptionb(config->options, \"disable_conservative_lrz\");\n"
+            "      screen->driconf.enable_throttling =\n"
+            "            !driQueryOptionb(config->options, \"disable_throttling\");\n"
+            "      screen->driconf.dual_color_blend_by_location =\n"
+            "            driQueryOptionb(config->options, \"dual_color_blend_by_location\");\n"
+            "      if (driQueryOptionb(config->options, \"disable_explicit_sync_heuristic\"))\n"
+            "         fd_device_disable_explicit_sync_heuristic(dev);\n"
+            "   } else {\n"
+            "      screen->driconf.conservative_lrz = false;\n"
+            "      screen->driconf.enable_throttling = false;\n"
+            "      screen->driconf.dual_color_blend_by_location = true;\n"
+            "   }\n",
+        ),
+    ],
+    "freedreno_gmem.h": [
+        (
+            '#include "pipe/p_state.h"\n'
+            '#include "util/list.h"\n',
+            '#include "pipe/p_state.h"\n'
+            '#include "util/list.h"\n'
+            '#include "util/u_inlines.h"\n',
+        ),
+    ],
     "p_state.h": [
         (
             "   struct pipe_resource *next;\n"
@@ -369,96 +429,4 @@ FIXES = {
             '   pctx = freedreno_xlib_context;\n'
             '\n'
             '   void *map = freedreno_winsys->displaytarget_map(freedreno_winsys, pres->dt1, 0);\n'
-            '\n'
-            '   if (map) {\n'
-            '      struct pipe_transfer *transfer = NULL;\n'
-            '\n'
-            '      void *res_map = pipe_texture_map(pctx, pres, level, layer, PIPE_MAP_READ, 0, 0,\n'
-            '                                        u_minify(pres->width0, level),\n'
-            '                                        u_minify(pres->height0, level),\n'
-            '                                        &transfer);\n'
-            '      if (res_map) {\n'
-            '         util_copy_rect((uint8_t*)map, pres->format, pres->dt_stride, 0, 0,\n'
-            '                        transfer->box.width, transfer->box.height,\n'
-            '                        (const uint8_t*)res_map, transfer->stride, 0, 0);\n'
-            '         pipe_texture_unmap(pctx, transfer);\n'
-            '      }\n'
-            '      freedreno_winsys->displaytarget_unmap(freedreno_winsys, pres->dt1);\n'
-            '   }\n'
-            '\n'
-            '   freedreno_winsys->displaytarget_display(freedreno_winsys, pres->dt1, winsys_drawable_handle, nboxes, sub_box);\n'
-            '}\n',
-        ),
-        (
-            "   xstfb->screen->flush_frontbuffer(xstfb->screen, pctx, pres, 0, 0, &xstfb->buffer->ws, nboxes, box);\n"
-            "   return true;",
-            "   if (freedreno_winsys)\n"
-            "      freedreno_flush_frontbuffer(xstfb->screen, pctx, pres, 0, 0, &xstfb->buffer->ws, nboxes, box);\n"
-            "   else\n"
-            "      xstfb->screen->flush_frontbuffer(xstfb->screen, pctx, pres, 0, 0, &xstfb->buffer->ws, nboxes, box);\n"
-            "   return true;",
-        ),
-    ],
-}
-
-PATH_HINTS = {
-    "meson.build": None,  # root only
-    "meson.build:libgl-xlib": os.path.join("gallium", "targets", "libgl-xlib"),
-}
-
-
-def find_files(root):
-    """Return {fix_key: [full paths found]}."""
-    found = {key: [] for key in FIXES}
-
-    root_meson = os.path.join(root, "meson.build")
-    if os.path.isfile(root_meson):
-        found["meson.build"].append(root_meson)
-
-    for dirpath, _, filenames in os.walk(root):
-        for filename in filenames:
-            if filename == "meson.build":
-                hint = PATH_HINTS["meson.build:libgl-xlib"]
-                if dirpath.replace("\\", "/").endswith(hint.replace("\\", "/")):
-                    found["meson.build:libgl-xlib"].append(os.path.join(dirpath, filename))
-            elif filename in FIXES:
-                found[filename].append(os.path.join(dirpath, filename))
-
-    return found
-
-
-def apply_fixes(path, replacements):
-    with open(path) as f:
-        content = f.read()
-
-    changed = False
-    for old, new in replacements:
-        if new in content:
-            print(f"  {path}: already applied, one fix skipped")
-        elif old in content:
-            content = content.replace(old, new, 1)
-            changed = True
-        else:
-            print(f"  {path}: anchor not found, one fix skipped")
-
-    if changed:
-        with open(path, "w") as f:
-            f.write(content)
-        print(f"  {path}: patched")
-    else:
-        print(f"  {path}: no changes applied")
-
-
-def main():
-    root = sys.argv[1] if len(sys.argv) > 1 else "."
-    found = find_files(root)
-
-    for key, replacements in FIXES.items():
-        paths = found[key]
-        if not paths:
-            print(f"{key}: not found under {root}")
-            continue
-        for path in paths:
-            apply_fixes(path, replacements)
-
-
+    
