@@ -206,15 +206,15 @@ FIXES = {
             "                                           u_minify(pres->height0, level),\n"
             "                                           &transfer);\n"
             "         if (res_map) {\n"
-            "            util_copy_rect((ubyte*)map, pres->format, res->dt_stride, 0, 0,\n"
+            "            util_copy_rect((uint8_t*)map, pres->format, res->dt_stride, 0, 0,\n"
             "                           transfer->box.width, transfer->box.height,\n"
-            "                           (const ubyte*)res_map, transfer->stride, 0, 0);\n"
+            "                           (const uint8_t*)res_map, transfer->stride, 0, 0);\n"
             "            pipe_texture_unmap(pctx, transfer);\n"
             "         }\n"
             "         winsys->displaytarget_unmap(winsys, res->dt);\n"
             "      }\n"
             "\n"
-            "      winsys->displaytarget_display(winsys, res->dt, winsys_drawable_handle, sub_box);\n"
+            "      winsys->displaytarget_display(winsys, res->dt, winsys_drawable_handle, nboxes, sub_box);\n"
             "      return;\n"
             "   }\n"
             "\n"
@@ -339,6 +339,12 @@ FIXES = {
 PATH_HINTS = {
     "meson.build": None,  # root only
     "meson.build:libgl-xlib": os.path.join("gallium", "targets", "libgl-xlib"),
+    # A real Mesa tree also has src/gallium/frontends/va/context.c, which
+    # is unrelated (VA-API frontend, not Mesa core). Its anchors would
+    # never match that file's content, so it was always harmless, but
+    # pin the path anyway to avoid confusing "anchor not found" noise on
+    # an unrelated file.
+    "context.c": os.path.join("mesa", "main"),
 }
 
 
@@ -351,11 +357,16 @@ def find_files(root):
         found["meson.build"].append(root_meson)
 
     for dirpath, _, filenames in os.walk(root):
+        norm_dirpath = dirpath.replace("\\", "/")
         for filename in filenames:
             if filename == "meson.build":
                 hint = PATH_HINTS["meson.build:libgl-xlib"]
-                if dirpath.replace("\\", "/").endswith(hint.replace("\\", "/")):
+                if norm_dirpath.endswith(hint.replace("\\", "/")):
                     found["meson.build:libgl-xlib"].append(os.path.join(dirpath, filename))
+            elif filename == "context.c":
+                hint = PATH_HINTS["context.c"]
+                if norm_dirpath.endswith(hint.replace("\\", "/")):
+                    found["context.c"].append(os.path.join(dirpath, filename))
             elif filename in FIXES:
                 found[filename].append(os.path.join(dirpath, filename))
 
