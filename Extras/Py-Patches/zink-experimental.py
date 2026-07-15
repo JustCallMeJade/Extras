@@ -103,7 +103,7 @@ FIXES = {
             "dependencies : [dep_x11, idep_mesautil, dep_thread, dep_clock, dep_unwind, "
             "driver_swrast, driver_virgl, driver_asahi],",
             "dependencies : [dep_x11, idep_mesautil, dep_thread, dep_clock, dep_unwind, "
-            "driver_swrast, driver_virgl, driver_asahi, driver_zink],",
+            "driver_swrast, driver_virgl, driver_asahi, driver_zink, idep_xmlconfig],",
         ),
     ],
     "zink_resource.c": [
